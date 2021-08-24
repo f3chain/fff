@@ -1,0 +1,75 @@
+version: 1.5.0.{build}
+
+environment:
+  DOXYGEN: 1.8.14
+  IPFS: 0.4.22
+  matrix:
+  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+    VCVARS: C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat
+    VCRUNTIME: C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Redist\MSVC\14.16.27012\MergeModules\Microsoft_VC141_CRT_x64.msm
+    BOOST: C:\Libraries\boost_1_69_0
+    BOOST_LIB: C:\Libraries\boost_1_69_0\lib64-msvc-14.1
+  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+    VCVARS: C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat
+    VCRUNTIME: C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Redist\MSVC\14.24.28127\MergeModules\Microsoft_VC142_CRT_x64.msm
+    BOOST: C:\Libraries\boost_1_71_0
+    BOOST_LIB: C:\Libraries\boost_1_71_0\lib64-msvc-14.2
+
+install:
+- cmd: >-
+    cd C:\Tools\vcpkg
+
+    git pull --quiet
+
+    bootstrap-vcpkg.bat
+
+    vcpkg --triplet x64-windows-static install cryptopp curl openssl pbc nlohmann-json --recurse
+
+    vcpkg upgrade --no-dry-run
+
+    IF NOT EXIST installed\x64-windows-static\tools\go-ipfs\%IPFS%.stamp curl https://github.com/ipfs/go-ipfs/releases/download/v%IPFS%/go-ipfs_v%IPFS%_windows-amd64.zip -L -o downloads\ipfs.zip && del installed\x64-windows-static\tools\go-ipfs /Q && 7z x downloads\ipfs.zip -oinstalled\x64-windows-static\tools && echo "yes" > installed\x64-windows-static\tools\go-ipfs\%IPFS%.stamp
+
+    cd %APPVEYOR_BUILD_FOLDER%
+
+    nuget install Doxygen -version %DOXYGEN% -outputdirectory ..
+
+    git submodule update --init --recursive
+
+cache: C:\Tools\vcpkg\installed
+
+build_script:
+- cmd: >-
+    call "%VCVARS%"
+
+    cmake -DCMAKE_INSTALL_PREFIX=%APPVEYOR_BUILD_FOLDER%\_FFF -DCMAKE_PROGRAM_PATH=%APPVEYOR_BUILD_FOLDER%\..\Doxygen.%DOXYGEN%\tools -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\Tools\vcpkg\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static -DBOOST_ROOT=%BOOST% -DBOOST_LIBRARYDIR=%BOOST_LIB% -G Ninja .
+
+    ninja -j2 install
+
+    msbuild scripts\Windows\_FFF.sln /p:Configuration=Release /p:ProductVersion=%APPVEYOR_BUILD_VERSION% /p:_FFFPath=%APPVEYOR_BUILD_FOLDER%\_FFF /p:IPFSPath=C:\Tools\vcpkg\installed\x64-windows-static\tools\go-ipfs /p:VCRuntimePath="%VCRUNTIME%" /p:OutputPath=%APPVEYOR_BUILD_FOLDER%\%APPVEYOR_BUILD_VERSION%
+
+artifacts:
+- path: $(APPVEYOR_BUILD_VERSION)\_FFF.msi
+  name: MSI
+
+deploy:
+- provider: BinTray
+  username: decent-dcore
+  api_key:
+    secure: fc8ctUCKj9rzRdCbbz1K3i8rsJ5fACPvdSsvbVlucIZ7Fa5pb8EERHddfsEIhkkq
+  subject: decentfoundation
+  repo: windows
+  package: _FFF
+  version: $(APPVEYOR_BUILD_VERSION)/dev/$(APPVEYOR_BUILD_VERSION)
+  artifact: MSI
+  publish: true
+  override: true
+  on:
+    APPVEYOR_REPO_TAG: true
+
+notifications:
+- provider: Email
+  to:
+  - '{{commitAuthorEmail}}'
+  on_build_success: false
+  on_build_failure: true
+  on_build_status_changed: false

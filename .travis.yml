@@ -1,0 +1,87 @@
+dist: xenial
+
+sudo: required
+
+language: cpp
+
+git:
+  depth: false
+
+matrix:
+  include:
+    - os: linux
+      compiler: gcc
+      cache:
+        directories:
+          - $HOME/boost
+          - $HOME/json
+
+    - os: linux
+      compiler: clang
+      cache:
+        directories:
+          - $HOME/boost
+          - $HOME/json
+
+    - os: osx
+      osx_image: xcode10.3
+      compiler: clang
+      cache:
+        directories:
+          - /usr/local/Cellar/cryptopp
+          - $HOME/Library/Caches/Homebrew
+
+    - os: osx
+      osx_image: xcode11.3
+      compiler: clang
+      cache:
+        directories:
+          - /usr/local/Cellar/cryptopp
+          - $HOME/Library/Caches/Homebrew
+
+addons:
+  apt:
+    sources:
+      - sourceline: 'deb [arch=amd64] https://dl.bintray.com/decentfoundation/ubuntu xenial libpbc'
+        key_url: 'https://bintray.com/user/downloadSubjectPublicKey?username=decentfoundation'
+    packages:
+      - doxygen
+      - libcrypto++-dev
+      - libcurl4-openssl-dev
+      - libpbc-dev
+
+before_cache:
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+      brew cleanup;
+    fi
+
+before_install:
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+      test -L /usr/local/opt/cryptopp || test ! -d /usr/local/Cellar/cryptopp || brew link cryptopp || true;
+    fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+      brew update &&
+      brew bundle cleanup --force &&
+      brew bundle install --verbose &&
+      brew link --force readline;
+    fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+      test -d $HOME/boost/lib || (wget -nv https://sourceforge.net/projects/boost/files/boost/1.65.1/boost_1_65_1.tar.gz && tar xf boost_1_65_1.tar.gz && cd boost_1_65_1 && ./bootstrap.sh --prefix=$HOME/boost && ./b2 -j$(nproc) install);
+    fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+      test -d $HOME/json/include || (wget -nv https://github.com/nlohmann/json/archive/v3.7.3.tar.gz && tar xf v3.7.3.tar.gz && cd json-3.7.3 && cmake -DCMAKE_INSTALL_PREFIX=$HOME/json . && make -j$(nproc) install);
+    fi
+
+script:
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+      cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/_FFF .;
+    fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+      cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/_FFF -DCMAKE_PREFIX_PATH=$HOME/json -DBOOST_ROOT=$HOME/boost .;
+    fi
+  - make -j$(nproc) install
+
+notifications:
+  email:
+    on_success: never
+    on_failure: always
